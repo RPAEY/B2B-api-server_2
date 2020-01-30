@@ -1,0 +1,107 @@
+buildscript {
+    ext { springBootVersion = '2.0.5.RELEASE' }
+    repositories { mavenCentral() }
+    dependencies { classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}") }
+}
+
+plugins {
+    id "io.spring.dependency-management" version "1.0.5.RELEASE"
+}
+
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'idea'
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '2.0'
+}
+
+configurations {
+    jaxb
+}
+
+task genJaxb {
+    project.delete(files("${buildDir}/generated-sources"))
+    project.delete(files("${buildDir}/classes"))
+
+    ext.sourcesDir = "${buildDir}/generated-sources/jaxb"
+    ext.classesDir = "${buildDir}/classes/jaxb"
+    ext.schemaDir = "${projectDir}/src/main/resources"
+
+    outputs.dir classesDir
+
+    doLast() {
+        project.ant {
+            taskdef name: "xjc", classname: "com.sun.tools.xjc.XJCTask",
+                    classpath: configurations.jaxb.asPath
+            mkdir(dir: sourcesDir)
+            mkdir(dir: classesDir)
+
+            xjc(destdir: sourcesDir) {
+                schema(dir: schemaDir, includes: "**/*.xsd")
+                arg(value: "-wsdl")
+                produces(dir: sourcesDir, includes: "**/*.java")
+            }
+
+            javac(destdir: classesDir, source: 1.8, target: 1.8, debug: true,
+                    debugLevel: "lines,vars,source",
+                    classpath: configurations.jaxb.asPath) {
+                src(path: sourcesDir)
+                include(name: "**/*.java")
+                include(name: "*.java")
+            }
+
+            copy(todir: classesDir) {
+                fileset(dir: sourcesDir, erroronmissingdir: false) {
+                    exclude(name: "**/*.java")
+                }
+            }
+        }
+    }
+}
+
+bootJar {
+    def getVersionName = { ->
+        def stdout = new ByteArrayOutputStream()
+        exec {
+            commandLine 'git', 'rev-parse', 'HEAD'
+            standardOutput = stdout
+        }
+
+        def branch = new ByteArrayOutputStream()
+        exec {
+            commandLine 'git', 'name-rev', '--name-only', 'HEAD'
+            standardOutput = branch
+        }
+        if(branch.toString().trim() == 'master'){
+            return stdout.toString().trim()
+        }else {
+            return branch.toString().trim() + '.' + stdout.toString().trim()
+        }
+
+    }
+    baseName = 'api-server-soap'
+    version = getVersionName()
+    from genJaxb.classesDir
+}
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+repositories { mavenCentral() }
+
+dependencies {
+    compile("org.springframework.boot:spring-boot-starter-web-services")
+    compile("wsdl4j:wsdl4j:1.6.1")
+    compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.8.1'
+    jaxb("org.glassfish.jaxb:jaxb-xjc:2.2.11")
+    compile(files(genJaxb.classesDir).builtBy(genJaxb))
+    compile project(':mongo-access')
+    compile project(':audit')
+    testCompile 'junit:junit:4.12'
+    testCompile 'org.mockito:mockito-core:2.23.0'
+    testCompile("org.springframework.boot:spring-boot-starter-test")
+
+}

@@ -1,0 +1,6 @@
+rootProject.name = 'api-server'
+include 'mongo-access'
+include 'api-server-rest'
+include 'api-server-soap'
+include 'audit'
+
